@@ -15,6 +15,10 @@ on:
 env:
   AWS_REGION: us-east-2
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,21 +32,28 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Set image tags and GHCR username
+        id: image-tags
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          OWNER="${{ github.repository_owner }}"
+          # Use GHCR_USERNAME if set, otherwise use repository owner
+          GHCR_USER="${GHCR_USERNAME:-$OWNER}"
+          echo "frontend-tag=ghcr.io/$OWNER/kafka-enterprise-orders/web-frontend:latest" >> $GITHUB_OUTPUT
+          echo "backend-tag=ghcr.io/$OWNER/kafka-enterprise-orders/web-backend:latest" >> $GITHUB_OUTPUT
+          echo "frontend-tag-sha=ghcr.io/$OWNER/kafka-enterprise-orders/web-frontend:$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "backend-tag-sha=ghcr.io/$OWNER/kafka-enterprise-orders/web-backend:$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "owner=$OWNER" >> $GITHUB_OUTPUT
+          echo "ghcr-username=$GHCR_USER" >> $GITHUB_OUTPUT
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set image tags
-        id: image-tags
-        run: |
-          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-          echo "frontend-tag=ghcr.io/${{ github.actor }}/kafka-enterprise-orders/web-frontend:latest" >> $GITHUB_OUTPUT
-          echo "backend-tag=ghcr.io/${{ github.actor }}/kafka-enterprise-orders/web-backend:latest" >> $GITHUB_OUTPUT
-          echo "frontend-tag-sha=ghcr.io/${{ github.actor }}/kafka-enterprise-orders/web-frontend:$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "backend-tag-sha=ghcr.io/${{ github.actor }}/kafka-enterprise-orders/web-backend:$SHORT_SHA" >> $GITHUB_OUTPUT
+          username: ${{ steps.image-tags.outputs.ghcr-username }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build and push frontend
         run: |
