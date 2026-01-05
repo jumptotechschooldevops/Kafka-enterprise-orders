@@ -1,0 +1,88 @@
+name: EKS WebApp Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy (default: latest)'
+        required: false
+        default: 'latest'
+        type: string
+
+env:
+  AWS_REGION: us-east-2
+  EKS_CLUSTER: keo-eks
+  NAMESPACE: default
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set image tags
+        id: image-tags
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "latest" ]; then
+            IMAGE_TAG="latest"
+          fi
+          OWNER="${{ github.repository_owner }}"
+          echo "frontend-image=ghcr.io/$OWNER/kafka-enterprise-orders/web-frontend:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "backend-image=ghcr.io/$OWNER/kafka-enterprise-orders/web-backend:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Setup kubectl
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Set GHCR username
+        id: ghcr-config
+        run: |
+          # Use GHCR_USERNAME if set, otherwise use repository owner
+          GHCR_USER="${GHCR_USERNAME:-${{ github.repository_owner }}}"
+          echo "ghcr-username=$GHCR_USER" >> $GITHUB_OUTPUT
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+
+      - name: Create secrets
+        run: |
+          # ghcr pull secret
+          kubectl delete secret ghcr -n ${{ env.NAMESPACE }} --ignore-not-found
+          kubectl create secret docker-registry ghcr \
+            --docker-server=ghcr.io \
+            --docker-username=${{ steps.ghcr-config.outputs.ghcr-username }} \
+            --docker-password=${{ secrets.GHCR_PAT }} \
+            -n ${{ env.NAMESPACE }}
+
+      - name: Deploy
+        run: |
+          helm upgrade --install webapp ./k8s/charts/webapp \
+            --namespace ${{ env.NAMESPACE }} \
+            --set ghcr.enabled=false \
+            --set frontendImage=${{ steps.image-tags.outputs.frontend-image }} \
+            --set backendImage=${{ steps.image-tags.outputs.backend-image }} \
+            --set couchbase.host=${{ secrets.COUCHBASE_HOST }} \
+            --set couchbase.bucket=${{ secrets.COUCHBASE_BUCKET }} \
+            --set couchbase.username=${{ secrets.COUCHBASE_USERNAME }} \
+            --set couchbase.password=${{ secrets.COUCHBASE_PASSWORD }} \
+            --wait --timeout 5m
+
+      - name: Verify
+        run: |
+          echo "## Deployment Verification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pods Status" >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Ingress Status" >> $GITHUB_STEP_SUMMARY
+          kubectl get ingress -n ${{ env.NAMESPACE }} >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          kubectl get ingress -n ${{ env.NAMESPACE }}
