@@ -97,5 +97,5 @@ resource "null_resource" "cleanup_k8s_resources" {
     interpreter = ["powershell", "-Command"]
   }
 
-  depends_on = [module.eks]
+  #depends_on = [module.eks]
 }
