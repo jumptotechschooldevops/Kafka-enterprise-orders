@@ -1,9 +1,9 @@
 terraform {
   backend "s3" {
-    bucket         = "kafka-enterprise-orders-tfstate"
+    bucket         = "aisalkyn-kafka-tfstate"
     key            = "terraform.tfstate"
-    region         = "us-east-2"
-    dynamodb_table = "kafka-enterprise-orders-lock"
+    region         = "us-east-1"
+    dynamodb_table = "aisalkyn-terraform-lock"
     encrypt        = true
   }
 }

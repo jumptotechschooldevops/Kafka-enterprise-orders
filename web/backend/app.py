@@ -1,94 +1,116 @@
 from fastapi import FastAPI
-from datetime import timedelta
 import os
-
 from couchbase.cluster import Cluster
 from couchbase.auth import PasswordAuthenticator
-from couchbase.options import ClusterOptions, ClusterTimeoutOptions
+from couchbase.options import ClusterOptions
+from datetime import timedelta
 
 app = FastAPI()
+
+# =========================
+# ENV VARIABLES
+# =========================
 
 COUCHBASE_HOST = os.getenv("COUCHBASE_HOST")
 COUCHBASE_BUCKET = os.getenv("COUCHBASE_BUCKET")
 COUCHBASE_USER = os.getenv("COUCHBASE_USERNAME")
 COUCHBASE_PASS = os.getenv("COUCHBASE_PASSWORD")
 
+cluster = None
+collection = None
+
+# =========================
+# CONNECT TO COUCHBASE (FIXED)
+# =========================
+
+try:
+    auth = PasswordAuthenticator(COUCHBASE_USER, COUCHBASE_PASS)
+
+    cluster = Cluster(
+        f"couchbases://{COUCHBASE_HOST}",
+        ClusterOptions(auth)
+    )
+
+    # IMPORTANT: wait for connection
+    cluster.wait_until_ready(timedelta(seconds=10))
+
+    bucket = cluster.bucket(COUCHBASE_BUCKET)
+    collection = bucket.default_collection()
+
+    print("✅ Connected to Couchbase")
+
+except Exception as e:
+    print("❌ Couchbase connection failed:", str(e))
+
+
+# =========================
+# HEALTH CHECK
+# =========================
 
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
 
 
+# =========================
+# QUERY DATA
+# =========================
+
 @app.get("/api/analytics")
 def get_analytics():
     try:
-        # Build connection string - for local Couchbase, use couchbase:// protocol
-        # For Couchbase Cloud, use couchbases:// (SSL)
-        if "cloud.couchbase.com" in COUCHBASE_HOST:
-            conn_str = f"couchbases://{COUCHBASE_HOST}"
-        else:
-            # Local Couchbase - use couchbase:// protocol
-            # The SDK will use default ports (8091 for management, 11210 for data)
-            conn_str = f"couchbase://{COUCHBASE_HOST}"
-        
-        cluster = Cluster(
-            conn_str,
-            ClusterOptions(
-                PasswordAuthenticator(COUCHBASE_USER, COUCHBASE_PASS),
-                timeout_options=ClusterTimeoutOptions(
-                    kv_timeout=timedelta(seconds=10),
-                    connect_timeout=timedelta(seconds=10)
-                )
-            )
-        )
+        result = cluster.query(f"SELECT * FROM `{COUCHBASE_BUCKET}` LIMIT 10")
+        rows = [row for row in result]
 
-        # Wait for the bucket to be ready
-        bucket = cluster.bucket(COUCHBASE_BUCKET)
-        bucket.wait_until_ready(timedelta(seconds=5))
-        
-        # Get latest 10 orders sorted by order_id descending
-        # Query returns documents directly
-        query = f"SELECT * FROM `{COUCHBASE_BUCKET}` ORDER BY order_id DESC LIMIT 10"
-        result = cluster.query(query)
-
-        # Extract row values from query result
-        # Handle different result structures from Couchbase SDK
-        orders = []
-        for row in result.rows():
-            # Check if row has a 'value' attribute (QueryRow object)
-            if hasattr(row, 'value'):
-                row_data = row.value
-            # If row is already a dict, use it directly
-            elif isinstance(row, dict):
-                row_data = row
-            else:
-                # Try to get value as dict
-                row_data = row
-            
-            # If the result has the bucket name as a key, extract it
-            # Otherwise use the data as-is
-            if isinstance(row_data, dict):
-                # Check for nested bucket name key
-                if COUCHBASE_BUCKET in row_data:
-                    orders.append(row_data[COUCHBASE_BUCKET])
-                else:
-                    orders.append(row_data)
-            else:
-                orders.append(row_data)
-
-        return {"status": "ok", "orders": orders}
+        return {
+            "status": "success",
+            "data": rows
+        }
 
     except Exception as e:
-        error_msg = str(e)
-        # Provide helpful error message for common issues
-        if "authentication_failure" in error_msg or "authentication" in error_msg.lower():
-            if "cloud.couchbase.com" not in (COUCHBASE_HOST or ""):
-                error_msg += " | For local Couchbase: 1) Open http://localhost:8091, 2) Login (Administrator/password), 3) Create bucket 'order_analytics'"
-        elif "bucket" in error_msg.lower() and "not found" in error_msg.lower():
-            error_msg += " | Bucket 'order_analytics' not found. Please create it in Couchbase Admin UI (http://localhost:8091)"
-        
-        return {"error": error_msg, "details": {
-            "host": COUCHBASE_HOST,
-            "bucket": COUCHBASE_BUCKET,
-            "user": COUCHBASE_USER
-        }}
+        return {"error": str(e)}
+
+
+# =========================
+# WRITE
+# =========================
+
+@app.get("/api/write")
+def write_data():
+    try:
+        collection.upsert("order-1", {"order": "123", "status": "created"})
+        return {"status": "written"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# =========================
+# READ
+# =========================
+
+@app.get("/api/read")
+def read_data():
+    try:
+        result = collection.get("order-1")
+        return result.content_as[dict]
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# =========================
+# SDK TEST
+# =========================
+
+@app.get("/api/sdk-test")
+def sdk_test():
+    try:
+        collection.upsert("ecs-test", {"msg": "hello from ECS"})
+        result = collection.get("ecs-test")
+
+        return {
+            "status": "success",
+            "data": result.content_as[dict]
+        }
+
+    except Exception as e:
+        return {"error": str(e)}

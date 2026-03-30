@@ -7,5 +7,7 @@ locals {
   private_subnets = length(var.existing_private_subnet_ids) > 0 ? var.existing_private_subnet_ids : module.vpc.private_subnets
 
   alb_sg       = var.existing_alb_sg_id != "" ? var.existing_alb_sg_id : aws_security_group.alb[0].id
-  ecs_tasks_sg = aws_security_group.ecs_tasks.id
+
+  # ✅ FIXED
+  ecs_tasks_sg = aws_security_group.webapp_tasks.id
 }
