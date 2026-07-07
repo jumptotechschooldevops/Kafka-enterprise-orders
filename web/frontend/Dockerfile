@@ -6,8 +6,8 @@ COPY . .
 RUN npm run build
 
 FROM nginx:latest
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY --from=build /app/build /usr/share/nginx/html
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/bin/sh", "-c", "envsubst '${BACKEND_URL}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
 

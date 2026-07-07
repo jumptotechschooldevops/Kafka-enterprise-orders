@@ -11,12 +11,14 @@ module "eks" {
   enable_irsa = true
 
   # ----------------------------------------------------
-  # CONTROL PLANE ENDPOINT ACCESS (IMPORTANT!)
+  # CONTROL PLANE ENDPOINT ACCESS
+  # Public access restricted to known CIDRs (CI/CD runners + your IP).
+  # Set allowed_public_cidrs in secrets.tfvars. 0.0.0.0/0 is insecure.
   # ----------------------------------------------------
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = true
 
-  cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]
+  cluster_endpoint_public_access_cidrs = var.allowed_public_cidrs
 
   # ----------------------------------------------------
   # CLUSTER ACCESS - Allow current IAM user/role
@@ -34,8 +36,8 @@ module "eks" {
 
       instance_types = ["t3.medium"]
 
-      # Node placement (reliable choice)
-      subnet_ids = module.vpc.public_subnets
+      # Nodes in private subnets — no public IPs, egress via NAT gateway
+      subnet_ids = module.vpc.private_subnets
 
       tags = {
         Name = "eks-node"

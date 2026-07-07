@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Order",
+  "description": "Schema for order events published to the orders Kafka topic",
+  "type": "object",
+  "required": ["order_id", "customer_id", "amount", "currency", "country", "status", "created_at"],
+  "additionalProperties": false,
+  "properties": {
+    "order_id":    { "type": "integer", "minimum": 1 },
+    "customer_id": { "type": "integer", "minimum": 1000 },
+    "amount":      { "type": "number",  "minimum": 0.01, "maximum": 100000 },
+    "currency":    { "type": "string",  "enum": ["USD", "EUR", "GBP", "CAD", "AUD"] },
+    "country":     { "type": "string",  "minLength": 2, "maxLength": 2 },
+    "status":      { "type": "string",  "enum": ["CREATED", "CONFIRMED", "CANCELLED"] },
+    "created_at":  { "type": "string",  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}" }
+  }
+}

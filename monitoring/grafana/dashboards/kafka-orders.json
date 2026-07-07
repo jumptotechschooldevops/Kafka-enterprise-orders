@@ -1,0 +1,68 @@
+{
+  "title": "Kafka Enterprise Orders",
+  "uid": "kafka-enterprise-orders",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "type": "stat", "title": "Orders / min",
+      "targets": [{ "expr": "rate(analytics_orders_saved_total[1m]) * 60", "datasource": "Prometheus" }],
+      "options": { "colorMode": "background", "graphMode": "area" }
+    },
+    {
+      "id": 2, "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "type": "stat", "title": "Fraud Alerts / min",
+      "targets": [{ "expr": "rate(fraud_alerts_total[1m]) * 60", "datasource": "Prometheus" }],
+      "options": { "colorMode": "background", "graphMode": "area",
+                   "thresholds": { "steps": [{"value": 0, "color": "green"}, {"value": 1, "color": "red"}] } }
+    },
+    {
+      "id": 3, "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "type": "stat", "title": "Total Sales (USD)",
+      "targets": [{ "expr": "analytics_total_sales_usd", "datasource": "Prometheus" }],
+      "options": { "colorMode": "background", "graphMode": "none",
+                   "unit": "currencyUSD" }
+    },
+    {
+      "id": 4, "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "type": "stat", "title": "DLQ Messages",
+      "targets": [{ "expr": "sum(dlq_messages_received_total)", "datasource": "Prometheus" }],
+      "options": { "colorMode": "background",
+                   "thresholds": { "steps": [{"value": 0, "color": "green"}, {"value": 1, "color": "orange"}] } }
+    },
+    {
+      "id": 5, "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "type": "timeseries", "title": "Orders & Fraud Rate",
+      "targets": [
+        { "expr": "rate(analytics_orders_saved_total[1m]) * 60", "legendFormat": "Orders/min", "datasource": "Prometheus" },
+        { "expr": "rate(fraud_alerts_total[1m]) * 60", "legendFormat": "Fraud alerts/min", "datasource": "Prometheus" }
+      ]
+    },
+    {
+      "id": 6, "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "type": "timeseries", "title": "API Latency (p50 / p95)",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(api_request_latency_seconds_bucket[1m]))", "legendFormat": "p50", "datasource": "Prometheus" },
+        { "expr": "histogram_quantile(0.95, rate(api_request_latency_seconds_bucket[1m]))", "legendFormat": "p95", "datasource": "Prometheus" }
+      ]
+    },
+    {
+      "id": 7, "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "type": "timeseries", "title": "API Request Rate by Status",
+      "targets": [
+        { "expr": "rate(api_requests_total{status=\"200\"}[1m]) * 60", "legendFormat": "2xx/min", "datasource": "Prometheus" },
+        { "expr": "rate(api_requests_total{status=~\"4..\"}[1m]) * 60", "legendFormat": "4xx/min", "datasource": "Prometheus" },
+        { "expr": "rate(api_requests_total{status=~\"5..\"}[1m]) * 60", "legendFormat": "5xx/min", "datasource": "Prometheus" }
+      ]
+    },
+    {
+      "id": 8, "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "type": "timeseries", "title": "Couchbase Save Latency (p95)",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, rate(analytics_save_seconds_bucket[1m]))", "legendFormat": "p95 save latency", "datasource": "Prometheus" }
+      ]
+    }
+  ]
+}

@@ -40,6 +40,15 @@ variable "certificate_arn" {
   default = "arn:aws:acm:us-east-2:343218219153:certificate/bfd58b06-35f1-4fcf-bdd1-76e4e5f72dd2"
 }
 
+# CIDRs allowed to reach the EKS API endpoint publicly.
+# Add your office IP and GitHub Actions runner CIDRs here.
+# Never use ["0.0.0.0/0"] in production.
+variable "allowed_public_cidrs" {
+  description = "CIDRs that may access the EKS API server endpoint"
+  type        = list(string)
+  default     = []   # override in secrets.tfvars: allowed_public_cidrs = ["YOUR_IP/32"]
+}
+
 # Couchbase
 variable "couchbase_host" {
   default = "cb.2s2wqp2fpzi0hanx.cloud.couchbase.com"
