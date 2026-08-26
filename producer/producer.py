@@ -102,8 +102,17 @@ def generate_order(order_id: int) -> dict:
 
 def main():
     logger.info("starting", extra={"bootstrap": BOOTSTRAP, "topic": TOPIC_NAME})
-    producer = KafkaProducer(**build_kafka_config())
-    logger.info("connected")
+    producer = None
+    for attempt in range(1, 31):
+        try:
+            producer = KafkaProducer(**build_kafka_config())
+            logger.info("connected", extra={"attempt": attempt})
+            break
+        except Exception as e:
+            if attempt == 30:
+                raise
+            logger.warning("waiting_for_kafka", extra={"attempt": attempt, "error": str(e)})
+            time.sleep(2)
 
     order_id = 1
     while True:

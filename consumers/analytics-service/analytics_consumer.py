@@ -127,7 +127,7 @@ def _connect_couchbase():
             logger.warning("couchbase_waiting", extra={"attempt": attempt, "error": str(e)})
             time.sleep(3)
     logger.error("couchbase_unavailable")
-    return None, None
+    raise RuntimeError("couchbase_unavailable")
 
 
 def _send_to_dlq(producer, msg, error: str):
@@ -141,6 +141,7 @@ def _send_to_dlq(producer, msg, error: str):
         "service":          "analytics-service",
     }
     producer.send(DLQ_TOPIC, value=json.dumps(payload).encode())
+    producer.flush(timeout=10)
     DLQ_SENDS.inc()
     logger.error("sent_to_dlq", extra={"order_id": msg.value.get("order_id"), "error": error})
 
@@ -159,9 +160,11 @@ def process_message(msg, collection, analytics_producer, dlq_producer, state: di
                 "kafka_partition": msg.partition,
             }
 
-            if collection:
-                with SAVE_LATENCY.time():
-                    collection.upsert(doc_id, doc)
+            if not collection:
+                raise RuntimeError("couchbase_unavailable")
+
+            with SAVE_LATENCY.time():
+                collection.upsert(doc_id, doc)
 
             state["total_sales"] += float(order.get("amount", 0))
             state["order_count"] += 1
@@ -175,6 +178,7 @@ def process_message(msg, collection, analytics_producer, dlq_producer, state: di
                 "updated_at":  datetime.now(timezone.utc).isoformat(),
             }
             analytics_producer.send(ANALYTICS_TOPIC, value=json.dumps(summary).encode())
+            analytics_producer.flush(timeout=10)
 
             logger.info("order_saved", extra={
                 "order_id":    order_id,
@@ -206,20 +210,28 @@ def main():
             group_id="analytics-group",
             value_deserializer=lambda m: json.loads(m.decode("utf-8")),
             auto_offset_reset="earliest",
-            enable_auto_commit=True,
+            enable_auto_commit=False,  # commit only after Couchbase upsert or DLQ
         ),
         "consumer",
     )
     analytics_producer = _connect_kafka_with_retry(lambda: KafkaProducer(**base_cfg), "analytics-producer")
     dlq_producer       = _connect_kafka_with_retry(lambda: KafkaProducer(**base_cfg), "dlq-producer")
 
-    _, collection = _connect_couchbase()
+    collection = None
+    while collection is None:
+        try:
+            _, collection = _connect_couchbase()
+        except Exception as e:
+            logger.warning("couchbase_retrying", extra={"error": str(e)})
+            time.sleep(3)
+
     state = {"total_sales": 0.0, "order_count": 0}
     logger.info("listening", extra={"topic": ORDERS_TOPIC})
 
     try:
         for msg in consumer:
             process_message(msg, collection, analytics_producer, dlq_producer, state)
+            consumer.commit()
     except KeyboardInterrupt:
         logger.info("shutting_down")
     finally:

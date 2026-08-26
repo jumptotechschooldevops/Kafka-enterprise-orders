@@ -198,6 +198,7 @@ services:
     environment:
       BACKEND_URL: http://backend:8000
       BACKEND_API_KEY: ${BACKEND_API_KEY:-dev-key-change-me}
+    restart: unless-stopped
 
   kafdrop:
     image: obsidiandynamics/kafdrop

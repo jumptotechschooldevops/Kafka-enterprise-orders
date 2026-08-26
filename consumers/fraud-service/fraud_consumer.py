@@ -140,6 +140,7 @@ def _send_to_dlq(producer, msg, error: str):
         "service":          "fraud-service",
     }
     producer.send(DLQ_TOPIC, value=json.dumps(payload).encode())
+    producer.flush(timeout=10)
     DLQ_SENDS.inc()
     logger.error("sent_to_dlq", extra={"order_id": msg.value.get("order_id"), "error": error})
 
@@ -164,6 +165,7 @@ def process_message(msg, alert_producer, dlq_producer):
                     "alerted_at": datetime.now(timezone.utc).isoformat(),
                 }
                 alert_producer.send(ALERTS_TOPIC, value=json.dumps(alert).encode())
+                alert_producer.flush(timeout=10)
                 for r in reasons:
                     FRAUD_ALERTS.labels(reason=r).inc()
                 logger.warning("fraud_detected", extra={
@@ -196,7 +198,7 @@ def main():
             group_id="fraud-group",
             value_deserializer=lambda m: json.loads(m.decode("utf-8")),
             auto_offset_reset="earliest",
-            enable_auto_commit=True,
+            enable_auto_commit=False,  # commit only after process or DLQ
         ),
         "consumer",
     )
@@ -208,6 +210,8 @@ def main():
     try:
         for msg in consumer:
             process_message(msg, alert_producer, dlq_producer)
+            # At-least-once: commit after success or after the message is parked in the DLQ.
+            consumer.commit()
     except KeyboardInterrupt:
         logger.info("shutting_down")
     finally:

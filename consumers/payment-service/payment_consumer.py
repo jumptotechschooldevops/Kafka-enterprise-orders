@@ -99,6 +99,7 @@ def _send_to_dlq(producer: KafkaProducer, msg, error: str):
         "service":          "payment-service",
     }
     producer.send(DLQ_TOPIC, value=json.dumps(payload).encode())
+    producer.flush(timeout=10)
     DLQ_SENDS.inc()
     logger.error("sent_to_dlq", extra={"order_id": msg.value.get("order_id"), "error": error})
 
@@ -119,6 +120,7 @@ def process_message(msg, payment_producer: KafkaProducer, dlq_producer: KafkaPro
                     "processed_at": datetime.now(timezone.utc).isoformat(),
                 }
                 payment_producer.send(PAYMENTS_TOPIC, value=json.dumps(payment).encode())
+                payment_producer.flush(timeout=10)
                 PAYMENTS_PROCESSED.inc()
                 logger.info("payment_processed", extra={
                     "order_id": order_id,
@@ -149,6 +151,7 @@ def main():
             group_id="payments-group",
             value_deserializer=lambda m: json.loads(m.decode("utf-8")),
             auto_offset_reset="earliest",
+            enable_auto_commit=False,  # commit only after process or DLQ
         ),
         "consumer",
     )
@@ -160,6 +163,7 @@ def main():
     try:
         for msg in consumer:
             process_message(msg, payment_producer, dlq_producer)
+            consumer.commit()
     except KeyboardInterrupt:
         logger.info("shutting_down")
     finally:
