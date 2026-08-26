@@ -4,20 +4,19 @@
     "connector.class": "com.couchbase.connect.kafka.CouchbaseSinkConnector",
     "tasks.max": "1",
 
-    "topics": "test-orders",
+    "topics": "orders",
 
-    "couchbase.seed.nodes": "couchbase",
-    "couchbase.bucket": "orders",
-    "couchbase.username": "Administrator",
-    "couchbase.password": "Chicago26$",
+    "couchbase.seed.nodes": "${COUCHBASE_HOST}",
+    "couchbase.bucket": "${COUCHBASE_BUCKET}",
+    "couchbase.username": "${COUCHBASE_USERNAME}",
+    "couchbase.password": "${COUCHBASE_PASSWORD}",
     "couchbase.scope": "_default",
     "couchbase.collection": "_default",
 
-    "couchbase.document.id": "/orderId",
+    "couchbase.document.id": "/order_id",
 
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false"
   }
 }
-

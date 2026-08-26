@@ -8,9 +8,12 @@ Usage:
   export CONFLUENT_API_SECRET=your_secret
   python create_topics.py
 
-  # Local docker-compose
+  # Local docker-compose (RF must be 1 — there is only one broker)
   export KAFKA_BOOTSTRAP=kafka:9092
+  export KAFKA_REPLICATION_FACTOR=1
   python create_topics.py
+
+Local Docker Compose creates topics automatically via scripts/create_local_topics.sh (RF=1).
 
 NEVER hardcode credentials in source code.
 Rotate the Confluent Cloud API key if it was previously committed to git.
@@ -28,15 +31,21 @@ if not BOOTSTRAP:
     print("ERROR: Set KAFKA_BOOTSTRAP or KAFKA_BOOTSTRAP_SERVERS env var")
     sys.exit(1)
 
+# Cloud default is RF=3. Local single-broker Kafka MUST use RF=1
+# (set KAFKA_REPLICATION_FACTOR=1). Compose uses scripts/create_local_topics.sh.
+RF = int(os.environ.get("KAFKA_REPLICATION_FACTOR", "3"))
+if RF < 1:
+    print("ERROR: KAFKA_REPLICATION_FACTOR must be >= 1")
+    sys.exit(1)
+
 # Topics — includes DLQ topics for failed message handling
 TOPICS = [
-    NewTopic(name="orders",          num_partitions=6, replication_factor=3),
-    NewTopic(name="payments",        num_partitions=6, replication_factor=3),
-    NewTopic(name="fraud-alerts",    num_partitions=6, replication_factor=3),
-    NewTopic(name="order-analytics", num_partitions=6, replication_factor=3),
-    # Dead Letter Queue topics — failed messages land here after all retries
-    NewTopic(name="orders-dlq",      num_partitions=3, replication_factor=3),
-    NewTopic(name="analytics-dlq",   num_partitions=3, replication_factor=3),
+    NewTopic(name="orders",          num_partitions=6, replication_factor=RF),
+    NewTopic(name="payments",        num_partitions=6, replication_factor=RF),
+    NewTopic(name="fraud-alerts",    num_partitions=6, replication_factor=RF),
+    NewTopic(name="order-analytics", num_partitions=6, replication_factor=RF),
+    NewTopic(name="orders-dlq",      num_partitions=3, replication_factor=RF),
+    NewTopic(name="analytics-dlq",   num_partitions=3, replication_factor=RF),
 ]
 
 cfg = {

@@ -28,16 +28,17 @@ http {
         }
 
         # BACKEND REVERSE PROXY
-        # BACKEND_URL is injected at container startup via envsubst:
+        # BACKEND_URL and BACKEND_API_KEY are injected at container startup via envsubst.
+        # The API key is added server-side so the React bundle never contains it.
         #   local docker-compose: http://backend:8000
         #   EKS sidecar pod:      http://localhost:8000
-        #   ECS (ALB):            http://<alb-dns>
         location /api/ {
             proxy_pass ${BACKEND_URL}/api/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-API-Key ${BACKEND_API_KEY};
         }
     }
 }

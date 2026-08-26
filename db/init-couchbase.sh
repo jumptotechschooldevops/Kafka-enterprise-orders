@@ -12,7 +12,7 @@ BUCKET_NAME="${COUCHBASE_BUCKET:-order_analytics}"
 BASE_URL="http://${COUCHBASE_HOST}:${COUCHBASE_PORT}"
 
 echo "Waiting for Couchbase REST API to respond..."
-until curl -sf "${BASE_URL}/pools" > /dev/null 2>&1; do
+until curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/pools" | grep -E '^(200|401)$' > /dev/null; do
     echo "  waiting..."
     sleep 2
 done

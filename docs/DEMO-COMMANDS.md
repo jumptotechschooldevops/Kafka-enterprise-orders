@@ -1,41 +1,50 @@
 # Quick Demo Commands
 
 ## Local Testing (Docker)
-```powershell
-cd D:\AJ\kafka-enterprise-orders
 
-# Start all services
-docker-compose up -d --build
+Copy `.env.example` to `.env` and fill in local-only values. Never commit `.env`.
+
+```bash
+docker compose up -d --build
 
 # Check logs
-docker-compose logs -f producer
-docker-compose logs -f analytics-service
+docker compose logs -f producer
+docker compose logs -f analytics-service
 
 # Open browser
-# Frontend: http://localhost:3000
-# Kafdrop:  http://localhost:9000
-# Backend:  http://localhost:8000/api/analytics
+# Frontend:  http://localhost:3000
+# Kafdrop:   http://localhost:9000
+# Grafana:   http://localhost:3001
+# Backend:   http://localhost:8000/healthz
 
-# Stop
-docker-compose down
+# Direct API (requires X-API-Key from your local .env / API_KEYS)
+# curl -H "X-API-Key: YOUR_LOCAL_API_KEY" http://localhost:8000/api/analytics
+
+# Through nginx (API key is injected server-side; no header needed)
+# curl http://localhost:3000/api/analytics
+
+docker compose down
 ```
 
-**Note:** Local Couchbase needs manual bucket setup:
-1. Open http://localhost:8091
-2. Login: Administrator / password
-3. Create bucket: `order_analytics`
+Local Couchbase is initialized by `couchbase-init` (bucket `order_analytics`).
+Console: http://localhost:8091 — use the local username/password from `.env`.
 
 ---
 
 ## EKS Deploy
-```powershell
-cd D:\AJ\kafka-enterprise-orders\infra\terraform-eks
+
+Secrets must come from a gitignored `secrets.tfvars` (see `infra/terraform-eks/secrets.tfvars.example`). Never pass real credentials on the command line or commit them to git.
+
+```bash
+cd infra/terraform-eks
+cp secrets.tfvars.example secrets.tfvars
+# Edit secrets.tfvars locally — do not commit it
 terraform init
-terraform apply -var="ghcr_pat=YOUR_GHCR_TOKEN" -var="couchbase_password=AppPass123!" -var="certificate_arn=arn:aws:acm:us-east-2:343218219153:certificate/00353776-9755-4283-98f8-e05c1e337b28"
+terraform apply -var-file="secrets.tfvars"
 ```
 
 ## EKS Verify
-```powershell
+```bash
 aws eks update-kubeconfig --name keo-eks --region us-east-2
 kubectl get nodes
 kubectl get pods
@@ -44,18 +53,21 @@ kubectl get ingress
 ```
 
 ## EKS Cleanup
-```powershell
-cd D:\AJ\kafka-enterprise-orders\infra\terraform-eks
-terraform destroy -var="ghcr_pat=x" -var="couchbase_password=x"
+```bash
+cd infra/terraform-eks
+terraform destroy -var-file="secrets.tfvars"
 ```
 
 ---
 
 ## ECS Deploy
-```powershell
-cd D:\AJ\kafka-enterprise-orders\infra\terraform-ecs
+
+```bash
+cd infra/terraform-ecs
+cp secrets.tfvars.example secrets.tfvars
+# Edit secrets.tfvars locally — do not commit it
 terraform init
-terraform apply -var-file="values.auto.tfvars" -var="ghcr_pat=YOUR_GHCR_TOKEN" -var="confluent_api_key=LUTQDYGP3XTVJE5V" -var="confluent_api_secret=YOUR_CONFLUENT_SECRET" -var="couchbase_password=AppPass123!"
+terraform apply -var-file="values.auto.tfvars" -var-file="secrets.tfvars"
 ```
 
 ## ECS Verify (AWS Console)
@@ -64,9 +76,9 @@ terraform apply -var-file="values.auto.tfvars" -var="ghcr_pat=YOUR_GHCR_TOKEN" -
 - CloudWatch → Log groups → /ecs/kafka-enterprise-orders-*
 
 ## ECS Cleanup
-```powershell
-cd D:\AJ\kafka-enterprise-orders\infra\terraform-ecs
-terraform destroy -var-file="values.auto.tfvars" -var="ghcr_pat=x" -var="confluent_api_key=x" -var="confluent_api_secret=x" -var="couchbase_password=x"
+```bash
+cd infra/terraform-ecs
+terraform destroy -var-file="values.auto.tfvars" -var-file="secrets.tfvars"
 ```
 
 ---
@@ -74,16 +86,15 @@ terraform destroy -var-file="values.auto.tfvars" -var="ghcr_pat=x" -var="conflue
 ## Test URLs
 
 ### EKS (after deploy)
-```powershell
+```bash
 curl https://orders.jumptotech.net/healthz
-curl https://orders.jumptotech.net/api/analytics
+# /api/analytics requires authentication; do not embed keys in docs
 ```
 
 ### ECS (get ALB URL from terraform output)
-```powershell
+```bash
 terraform output
 curl http://ALB_URL/healthz
-curl http://ALB_URL/api/analytics
 ```
 
 ---
@@ -94,27 +105,29 @@ SELECT * FROM order_analytics LIMIT 10;
 SELECT COUNT(*) FROM order_analytics;
 ```
 
-## ArgoCD Access
-```powershell
-# Get password
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}"
-# Decode: use base64 decoder or PowerShell
-[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("PASTE_HERE"))
-
-# Get ArgoCD URL
+## Argo CD Access
+```bash
+# Get the initial admin password from the cluster secret (not from git)
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+echo
 kubectl get svc -n argocd argocd-server
 ```
 
 ---
 
-## Your Values Reference
-| Key | Value |
-|-----|-------|
-| GHCR Username | aisalkyn85 |
-| Couchbase Host | cb.2s2wqp2fpzi0hanx.cloud.couchbase.com |
-| Couchbase User | appuser |
-| Couchbase Pass | AppPass123! |
-| Confluent Bootstrap | pkc-921jm.us-east-2.aws.confluent.cloud:9092 |
-| Confluent API Key | LUTQDYGP3XTVJE5V |
-| Domain | orders.jumptotech.net |
-| ACM Cert ARN | arn:aws:acm:us-east-2:343218219153:certificate/00353776-9755-4283-98f8-e05c1e337b28 |
+## Configuration reference (placeholders only)
+
+Set real values in gitignored files (`.env`, `secrets.tfvars`, Helm secrets). Never commit them.
+
+| Key | Where to set | Example placeholder |
+|-----|----------------|---------------------|
+| GHCR username | Helm / Terraform var | `your-ghcr-username` |
+| Couchbase host | `.env` / `secrets.tfvars` | `cb.xxxx.cloud.couchbase.com` |
+| Couchbase user | `.env` / `secrets.tfvars` | `your-couchbase-user` |
+| Couchbase password | `.env` / `secrets.tfvars` | `your-couchbase-password` |
+| Confluent bootstrap | `.env` / `secrets.tfvars` | `pkc-xxxx.region.aws.confluent.cloud:9092` |
+| Confluent API key | `.env` / `secrets.tfvars` | `your-confluent-api-key` |
+| Confluent API secret | `.env` / `secrets.tfvars` | `your-confluent-api-secret` |
+| Domain | Terraform var | `orders.example.com` |
+| ACM certificate ARN | `secrets.tfvars` | `arn:aws:acm:region:account:certificate/id` |
+| Backend API key (local) | `.env` `API_KEYS` / `BACKEND_API_KEY` | `dev-key-change-me` |

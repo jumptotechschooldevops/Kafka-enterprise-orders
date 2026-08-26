@@ -3,9 +3,9 @@
   "config": {
     "connector.class": "io.confluent.connect.jdbc.JdbcSourceConnector",
     "tasks.max": "1",
-    "connection.url": "jdbc:postgresql://postgres:5432/ordersdb",
-    "connection.user": "orders_user",
-    "connection.password": "orders_pass",
+    "connection.url": "${POSTGRES_JDBC_URL}",
+    "connection.user": "${POSTGRES_USER}",
+    "connection.password": "${POSTGRES_PASSWORD}",
     "mode": "incrementing",
     "incrementing.column.name": "id",
     "table.whitelist": "legacy_orders",
@@ -13,4 +13,3 @@
     "poll.interval.ms": "10000"
   }
 }
-

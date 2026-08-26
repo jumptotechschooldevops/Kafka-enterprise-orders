@@ -14,8 +14,11 @@ ingress:
   host: "orders.jumptotech.net"
   certificateArn: "arn:aws:acm:us-east-2:343218219153:certificate/00353776-9755-4283-98f8-e05c1e337b28"
 
+# Injected by frontend nginx as X-API-Key. Set via --set or values-secrets.yaml.
+backendApiKey: ""
+
 couchbase:
-  host: "cb.2s2wqp2fpzi0hanx.cloud.couchbase.com"
+  host: ""  # set via --set or values-secrets.yaml
   bucket: "order_analytics"
-  username: "admin"
-  password: ""  # set via --set couchbase.password=xxx
+  username: ""  # set via --set or values-secrets.yaml
+  password: ""  # set via --set or values-secrets.yaml

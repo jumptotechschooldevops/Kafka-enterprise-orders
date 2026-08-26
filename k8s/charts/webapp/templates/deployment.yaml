@@ -25,6 +25,8 @@ spec:
           env:
             - name: BACKEND_URL
               value: "http://localhost:{{ .Values.backendPort }}"
+            - name: BACKEND_API_KEY
+              value: "{{ .Values.backendApiKey }}"
           readinessProbe:
             httpGet:
               path: /
@@ -52,6 +54,8 @@ spec:
               value: "{{ .Values.couchbase.username }}"
             - name: COUCHBASE_PASSWORD
               value: "{{ .Values.couchbase.password }}"
+            - name: API_KEYS
+              value: "{{ .Values.backendApiKey }}"
           readinessProbe:
             httpGet:
               path: /healthz

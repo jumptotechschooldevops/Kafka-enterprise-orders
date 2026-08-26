@@ -10,6 +10,8 @@ spec:
     targetRevision: main
     path: k8s/charts/webapp
     helm:
+      # Do not put credentials in this file. Supply secrets via Argo CD
+      # Helm parameters, a gitignored values file, or External Secrets.
       values: |
         frontendImage: "ghcr.io/aisalkyn85/kafka-enterprise-orders/web-frontend:latest"
         backendImage: "ghcr.io/aisalkyn85/kafka-enterprise-orders/web-backend:latest"
@@ -19,12 +21,12 @@ spec:
           enabled: false
         ingress:
           host: "orders.jumptotech.net"
-          certificateArn: "arn:aws:acm:us-east-2:343218219153:certificate/00353776-9755-4283-98f8-e05c1e337b28"
+          certificateArn: "<set-via-helm-values-or-external-secret>"
         couchbase:
-          host: "cb.2s2wqp2fpzi0hanx.cloud.couchbase.com"
+          host: "<set-via-helm-values-or-external-secret>"
           bucket: "order_analytics"
-          username: "admin"
-          password: "P@ssword@1"
+          username: "<set-via-helm-values-or-external-secret>"
+          password: "<set-via-helm-values-or-external-secret>"
   destination:
     server: https://kubernetes.default.svc
     namespace: default

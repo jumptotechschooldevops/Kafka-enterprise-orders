@@ -9,5 +9,5 @@ FROM nginx:latest
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY --from=build /app/build /usr/share/nginx/html
 EXPOSE 80
-CMD ["/bin/sh", "-c", "envsubst '${BACKEND_URL}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "envsubst '${BACKEND_URL} ${BACKEND_API_KEY}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
 

@@ -8,6 +8,9 @@ tfplan
 secrets.tfvars
 
 # Secrets
+.env
+.env.*
+!.env.example
 *.pem
 *.key
 *.secret

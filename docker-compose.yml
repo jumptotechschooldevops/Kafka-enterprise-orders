@@ -1,5 +1,4 @@
 services:
-  # Zookeeper
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
     container_name: zookeeper
@@ -7,21 +6,35 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
     ports:
       - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "cub", "zk-ready", "localhost:2181", "5"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
-  # Kafka
   kafka:
     image: confluentinc/cp-kafka:7.6.1
     container_name: kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 10s
@@ -29,12 +42,19 @@ services:
       retries: 10
       start_period: 30s
 
-  # Couchbase (local)
-  # Note: On first run, Couchbase needs manual setup:
-  # 1. Open http://localhost:8091
-  # 2. Complete the setup wizard (or skip)
-  # 3. Login: Administrator / password
-  # 4. Go to Buckets → Create Bucket → Name: order_analytics → Create
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./scripts/create_local_topics.sh:/create_local_topics.sh:ro
+    entrypoint: ["/bin/bash", "/create_local_topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    restart: "no"
+
   couchbase:
     image: couchbase:community-7.2.0
     container_name: couchbase
@@ -44,49 +64,49 @@ services:
     volumes:
       - couchbase_data:/opt/couchbase/var
     environment:
-      - COUCHBASE_ADMINISTRATOR_USERNAME=Administrator
-      - COUCHBASE_ADMINISTRATOR_PASSWORD=password
+      COUCHBASE_ADMINISTRATOR_USERNAME: ${COUCHBASE_USERNAME:-Administrator}
+      COUCHBASE_ADMINISTRATOR_PASSWORD: ${COUCHBASE_PASSWORD:-password}
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8091/pools"]
+      # /pools returns 401 on an initialized cluster without creds; that still means the HTTP API is up.
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://localhost:8091/pools | grep -E '^(200|401)$'"]
       interval: 10s
       timeout: 5s
       retries: 20
       start_period: 30s
 
-  # Couchbase initialization - creates bucket automatically
   couchbase-init:
     image: curlimages/curl:latest
     container_name: couchbase-init
     depends_on:
-      - couchbase
+      couchbase:
+        condition: service_healthy
     volumes:
       - ./db/init-couchbase.sh:/init-couchbase.sh
     entrypoint: ["/bin/sh", "/init-couchbase.sh"]
     environment:
       COUCHBASE_HOST: couchbase
       COUCHBASE_PORT: 8091
-      COUCHBASE_USERNAME: Administrator
-      COUCHBASE_PASSWORD: password
-      COUCHBASE_BUCKET: order_analytics
+      COUCHBASE_USERNAME: ${COUCHBASE_USERNAME:-Administrator}
+      COUCHBASE_PASSWORD: ${COUCHBASE_PASSWORD:-password}
+      COUCHBASE_BUCKET: ${COUCHBASE_BUCKET:-order_analytics}
     restart: "no"
 
-  # Producer - generates orders
   producer:
     build: ./producer
     container_name: producer
     depends_on:
-      - kafka
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
     restart: on-failure
 
-  # Fraud detection consumer — metrics on :8001
   fraud-service:
     build: ./consumers/fraud-service
     container_name: fraud-service
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "8001:8001"
     environment:
@@ -94,13 +114,12 @@ services:
       METRICS_PORT: 8001
     restart: on-failure
 
-  # Payment processing consumer — metrics on :8002
   payment-service:
     build: ./consumers/payment-service
     container_name: payment-service
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "8002:8002"
     environment:
@@ -108,42 +127,38 @@ services:
       METRICS_PORT: 8002
     restart: on-failure
 
-  # Analytics consumer — writes to Couchbase, metrics on :8003
   analytics-service:
     build: ./consumers/analytics-service
     container_name: analytics-service
     depends_on:
-      kafka:
-        condition: service_healthy
-      couchbase:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      couchbase-init:
+        condition: service_completed_successfully
     ports:
       - "8003:8003"
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       COUCHBASE_HOST: couchbase
-      COUCHBASE_BUCKET: order_analytics
-      COUCHBASE_USERNAME: Administrator
-      COUCHBASE_PASSWORD: password
+      COUCHBASE_BUCKET: ${COUCHBASE_BUCKET:-order_analytics}
+      COUCHBASE_USERNAME: ${COUCHBASE_USERNAME:-Administrator}
+      COUCHBASE_PASSWORD: ${COUCHBASE_PASSWORD:-password}
       METRICS_PORT: 8003
     restart: on-failure
 
-  # DLQ consumer — reads all *-dlq topics, alerts on failures
   dlq-consumer:
     build: ./consumers/dlq-consumer
     container_name: dlq-consumer
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "8004:8004"
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       METRICS_PORT: 8004
-      # ALERT_WEBHOOK_URL: https://hooks.slack.com/services/your/webhook/url
     restart: on-failure
 
-  # Backend API — metrics at /metrics, auth via X-API-Key header
   backend:
     build: ./web/backend
     container_name: backend
@@ -151,34 +166,45 @@ services:
       - "8000:8000"
     environment:
       COUCHBASE_HOST: couchbase
-      COUCHBASE_BUCKET: order_analytics
-      COUCHBASE_USERNAME: Administrator
-      COUCHBASE_PASSWORD: password
-      API_KEYS: dev-key-change-me
+      COUCHBASE_BUCKET: ${COUCHBASE_BUCKET:-order_analytics}
+      COUCHBASE_USERNAME: ${COUCHBASE_USERNAME:-Administrator}
+      COUCHBASE_PASSWORD: ${COUCHBASE_PASSWORD:-password}
+      API_KEYS: ${API_KEYS:-dev-key-change-me}
     depends_on:
-      couchbase:
-        condition: service_healthy
+      couchbase-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: on-failure
 
-  # Frontend UI
   frontend:
     build: ./web/frontend
     container_name: frontend
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
-      REACT_APP_API_URL: http://localhost:8000
       BACKEND_URL: http://backend:8000
+      BACKEND_API_KEY: ${BACKEND_API_KEY:-dev-key-change-me}
 
-  # Kafdrop - Kafka UI
   kafdrop:
     image: obsidiandynamics/kafdrop
     container_name: kafdrop
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "9000:9000"
     environment:
@@ -186,7 +212,6 @@ services:
       SERVER_SERVLET_CONTEXTPATH: "/"
     restart: on-failure
 
-  # Prometheus — scrapes metrics from all services
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -199,7 +224,6 @@ services:
       - "--storage.tsdb.retention.time=7d"
     restart: unless-stopped
 
-  # Grafana — dashboards auto-provisioned from monitoring/grafana/
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -219,3 +243,6 @@ services:
 volumes:
   couchbase_data:
   grafana_data:
+  kafka_data:
+  zookeeper_data:
+  zookeeper_log:
